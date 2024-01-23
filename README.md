@@ -21,3 +21,6 @@ To correctly run the R file with the analysis you first need to extract each zip
 After that just open the file in R studio and run each of the steps.
 
 *Obs.: This is necessary due to size restrictions in place in Github, that won't allow to upload large files.*
+
+## Blog
+This article can also be found on the blog https://driegerblog.wordpress.com/2024/01/23/cyclistic-study-case/
