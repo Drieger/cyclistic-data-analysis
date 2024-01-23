@@ -1,8 +1,7 @@
-# Cyclistic
-
 <div align="center">
 	<img src="./imgs/cyclistic_logo.png" alt="cyclistic logo" width="250"/>
 </div>
+
 
 This repository contains all the data and resources used during the capstone project for the [Google Data Analytics Professional Certificate](https://www.coursera.org/professional-certificates/google-data-analytics).
 
