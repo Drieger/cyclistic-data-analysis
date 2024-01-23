@@ -1,0 +1,241 @@
+---
+title: "Cyclistic - Data analysis project"
+author: "Daniel R. Beckert"
+date: "2024-01-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objective
+Document the analysis process performed for the Google Data Analytics Professional Certificate capstone project.
+
+
+### Setup
+To run this project you need to run the following commands if you don't have `tidyverse`, `skimr` or `scales` installed. 
+```
+install.packages('tidyverse')
+install.packages('skimr')
+install.packages('scales')
+```
+
+```{r echo=FALSE}
+Sys.setlocale("LC_ALL", "English")
+```
+
+### Load necessary information
+```{r}
+library('tidyverse')
+library('skimr')
+library('scales')
+```
+
+## Load datasets
+Load all the data necessary to perform the analysis, we are assuming the data is on the `trips` directory on the same folder as this file
+```{r}
+trips_2022_11 <- read_csv('./trips/2022/11/202211-divvy-tripdata.csv')
+trips_2022_12 <- read_csv('./trips/2022/12/202212-divvy-tripdata.csv')
+trips_2023_01 <- read_csv('./trips/2023/01/202301-divvy-tripdata.csv')
+trips_2023_02 <- read_csv('./trips/2023/02/202302-divvy-tripdata.csv')
+trips_2023_03 <- read_csv('./trips/2023/03/202303-divvy-tripdata.csv')
+trips_2023_04 <- read_csv('./trips/2023/04/202304-divvy-tripdata.csv')
+trips_2023_05 <- read_csv('./trips/2023/05/202305-divvy-tripdata.csv')
+trips_2023_06 <- read_csv('./trips/2023/06/202306-divvy-tripdata.csv')
+trips_2023_07 <- read_csv('./trips/2023/07/202307-divvy-tripdata.csv')
+trips_2023_08 <- read_csv('./trips/2023/08/202308-divvy-tripdata.csv')
+trips_2023_09 <- read_csv('./trips/2023/09/202309-divvy-tripdata.csv')
+trips_2023_10 <- read_csv('./trips/2023/10/202310-divvy-tripdata.csv')
+```
+
+## Prepare and process the data 
+```{r}
+skim(trips_2022_11)
+```
+
+To perform the a standard cleaning process we will create a function. The cleaning process will remove columns that won't be used during the analysis process, remove rows with missing values and fix problems where `ended_at` is before `started_at`
+```{r}
+clean_dataset <- function(dataset) {
+  
+  # Remove unnecessary columns
+  ds_removed_columns <- select(
+    dataset, 
+    -c(
+      start_station_name, 
+      start_station_id, 
+      end_station_name, 
+      end_station_id,
+      start_lat,
+      start_lng,
+      end_lat,
+      end_lng
+    )
+  )
+
+  # Remove missing values 
+  ds_removed_missing <- drop_na(ds_removed_columns)
+  
+  # Fix problem with dates
+  ds_fixed_dates <- ds_removed_missing %>% 
+    mutate(
+      new_started_at=if_else(started_at > ended_at, ended_at, started_at),
+      new_ended_at=if_else(started_at > ended_at, started_at, ended_at),
+      started_at=new_started_at,
+      ended_at=new_ended_at
+      ) %>% 
+    select(-new_started_at, -new_ended_at)
+  
+  return(ds_fixed_dates)
+}
+
+```
+
+Create a single dataframe with all the data from the previous 12 files
+```{r}
+all_trips <- rbind(
+  trips_2022_11,
+  trips_2022_12,
+  trips_2023_01,
+  trips_2023_02,
+  trips_2023_03,
+  trips_2023_04,
+  trips_2023_05,
+  trips_2023_06,
+  trips_2023_07,
+  trips_2023_08,
+  trips_2023_09,
+  trips_2023_10,
+  deparse.level = 0
+)
+```
+
+Clean all the data
+```{r}
+all_trips_cleaned <- clean_dataset(all_trips)
+```
+
+Enrich our data computing the amount of minutes spent in each ride and also the day of the week
+```{r}
+all_trips_cleaned_enriched <- mutate(all_trips_cleaned, trip_in_minutes=as.numeric(difftime(ended_at, started_at, units="mins")))
+all_trips_cleaned_enriched <- mutate(all_trips_cleaned_enriched, weekday=wday(started_at))
+```
+
+Remove outliers. Outliers are all those entries above the threshold of 97.5% of rides
+```{r}
+upper_bound <- quantile(all_trips_cleaned_enriched$trip_in_minutes, 0.975)
+
+all_trips_filtered <- all_trips_cleaned_enriched %>% 
+  filter(trip_in_minutes <= upper_bound)
+```
+
+## Analyze the data
+Identify how much each group represent on the total amount of rides
+```{r}
+trips_count_df<- all_trips_filtered %>% 
+  group_by(member_casual) %>% 
+  count() %>% 
+  ungroup() %>% 
+  mutate(percentage=`n` / sum(`n`)) %>% 
+  mutate(labels= scales::percent(percentage)) %>% 
+  rename(count=n)
+```
+
+```{r echo=FALSE}
+ggplot(trips_count_df, aes(x="", y=percentage, fill=member_casual)) + 
+  geom_col(color="black") + 
+  geom_text(aes(label=labels), position=position_stack(vjust=0.5)) +
+  coord_polar(theta="y") +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Contribution of rides per customer type") + 
+  labs(x="", y="")
+```
+
+Identify how much each group represents in terms of time spent during rides
+```{r}
+trips_time_df<- all_trips_filtered %>% 
+  group_by(member_casual) %>% 
+  summarize(sum=sum(trip_in_minutes)) %>% 
+  ungroup() %>% 
+  mutate(percent=`sum` / sum(`sum`)) %>% 
+  mutate(labels= scales::percent(percent))
+```
+
+```{r echo=FALSE}
+ggplot(trips_time_df, aes(x="", y=percent, fill=member_casual)) + 
+  geom_col(color="black") + 
+  geom_text(aes(label=labels), position=position_stack(vjust=0.5)) +
+  coord_polar(theta="y") +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Contribution of time spent in rides per customer type") + 
+  labs(x="", y="")
+
+```
+
+Check the average of time spent in each ride for each group
+```{r}
+average <- all_trips_filtered %>% 
+  group_by(member_casual) %>% 
+  summarize(avg=mean(trip_in_minutes))
+```
+
+```{r}
+average
+```
+
+Analyze the distribution of rides throughout the year
+```{r}
+ggplot(all_trips_filtered, aes(x=month(started_at, label=TRUE), fill=member_casual)) + geom_bar(position="dodge") +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Distribution of rides throught the year") + 
+  labs(x="Month", y="Rides count")
+```
+
+Analyze the distribution of rides throughout the weekdays
+```{r}
+ggplot(all_trips_filtered, aes(x=wday(started_at, label=TRUE), fill=member_casual)) +
+  geom_bar(position="dodge") +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Distribution of rides throught weekdays") + 
+  labs(x="Weekday", y="Rides count")
+```
+
+Analyze the distribution of rides throughout a day
+```{r}
+ggplot(all_trips_filtered, aes(x=hour(started_at), fill=member_casual)) +
+  geom_bar(position="dodge") +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Distribution of rides throught a day") + 
+  labs(x="Ride started at (hour)", y="Rides count")
+```
+
+Analyze the distribution of rides in different days of the week
+```{r}
+all_trips_weekday <- all_trips_filtered %>%  
+  filter(weekday!=1 & weekday!=7)
+
+all_trips_weekend <- all_trips_filtered %>%  
+  filter(weekday==1 | weekday==7)
+```
+
+```{r echo=FALSE}
+ggplot(all_trips_weekday, aes(x=hour(started_at), fill=member_casual)) +
+  geom_bar(position="dodge") +
+  facet_grid(~wday(started_at, label=TRUE)) +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Distribution of rides through the week (excluding weekends)") + 
+  labs(x="Ride started at (hour)", y="Rides count")
+```
+
+```{r echo=FALSE}
+ggplot(all_trips_weekend, aes(x=hour(started_at), fill=member_casual)) +
+  geom_bar(position="dodge") +
+  facet_grid(~wday(started_at, label=TRUE)) +
+  guides(fill=guide_legend(title="Customer Type")) +
+  ggtitle("Distribution of rides through weekends") + 
+  labs(x="Ride started at (hour)", y="Rides count")
+  
+```
+
+
+
